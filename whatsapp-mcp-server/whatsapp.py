@@ -3,12 +3,31 @@ from datetime import datetime
 from dataclasses import dataclass
 from typing import Optional, List, Tuple
 import os.path
+from pathlib import Path
+from urllib.parse import urlparse
 import requests
 import json
 import audio
 
-MESSAGES_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'whatsapp-bridge', 'store', 'messages.db')
-WHATSAPP_API_BASE_URL = "http://localhost:8080/api"
+MESSAGES_DB_PATH = os.environ.get("WHATSAPP_MESSAGES_DB", os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'whatsapp-bridge', 'store', 'messages.db'))
+WHATSAPP_API_BASE_URL = os.environ.get("WHATSAPP_API_BASE_URL", "http://127.0.0.1:8080/api")
+
+def api_post(payload, endpoint):
+    parsed = urlparse(WHATSAPP_API_BASE_URL)
+    if parsed.scheme != "http" or parsed.hostname not in ("127.0.0.1", "localhost") or parsed.port != 8080 or parsed.username or parsed.password or parsed.path != "/api" or parsed.query or parsed.fragment:
+        raise ValueError("WhatsApp API must use http://127.0.0.1:8080/api")
+    token_path = Path(os.environ["WHATSAPP_API_TOKEN_FILE"])
+    if token_path.stat().st_mode & 0o077:
+        raise ValueError("API token file must be owner-only")
+    token = token_path.read_text().strip()
+    if len(token) < 32:
+        raise ValueError("Invalid API token")
+    with requests.Session() as session:
+        session.trust_env = False
+        return session.post(f"{WHATSAPP_API_BASE_URL}/{endpoint}", json=payload,
+                            headers={"Authorization": f"Bearer {token}"},
+                            timeout=(5, 120), allow_redirects=False)
+
 
 @dataclass
 class Message:
@@ -49,7 +68,7 @@ class MessageContext:
 
 def get_sender_name(sender_jid: str) -> str:
     try:
-        conn = sqlite3.connect(MESSAGES_DB_PATH)
+        conn = sqlite3.connect(Path(MESSAGES_DB_PATH).resolve().as_uri() + "?mode=ro", uri=True)
         cursor = conn.cursor()
         
         # First try matching by exact JID
@@ -135,7 +154,7 @@ def list_messages(
 ) -> List[Message]:
     """Get messages matching the specified criteria with optional context."""
     try:
-        conn = sqlite3.connect(MESSAGES_DB_PATH)
+        conn = sqlite3.connect(Path(MESSAGES_DB_PATH).resolve().as_uri() + "?mode=ro", uri=True)
         cursor = conn.cursor()
         
         # Build base query
@@ -230,7 +249,7 @@ def get_message_context(
 ) -> MessageContext:
     """Get context around a specific message."""
     try:
-        conn = sqlite3.connect(MESSAGES_DB_PATH)
+        conn = sqlite3.connect(Path(MESSAGES_DB_PATH).resolve().as_uri() + "?mode=ro", uri=True)
         cursor = conn.cursor()
         
         # Get the target message first
@@ -325,7 +344,7 @@ def list_chats(
 ) -> List[Chat]:
     """Get chats matching the specified criteria."""
     try:
-        conn = sqlite3.connect(MESSAGES_DB_PATH)
+        conn = sqlite3.connect(Path(MESSAGES_DB_PATH).resolve().as_uri() + "?mode=ro", uri=True)
         cursor = conn.cursor()
         
         # Build base query
@@ -393,7 +412,7 @@ def list_chats(
 def search_contacts(query: str) -> List[Contact]:
     """Search contacts by name or phone number."""
     try:
-        conn = sqlite3.connect(MESSAGES_DB_PATH)
+        conn = sqlite3.connect(Path(MESSAGES_DB_PATH).resolve().as_uri() + "?mode=ro", uri=True)
         cursor = conn.cursor()
         
         # Split query into characters to support partial matching
@@ -441,7 +460,7 @@ def get_contact_chats(jid: str, limit: int = 20, page: int = 0) -> List[Chat]:
         page: Page number for pagination (default 0)
     """
     try:
-        conn = sqlite3.connect(MESSAGES_DB_PATH)
+        conn = sqlite3.connect(Path(MESSAGES_DB_PATH).resolve().as_uri() + "?mode=ro", uri=True)
         cursor = conn.cursor()
         
         cursor.execute("""
@@ -486,7 +505,7 @@ def get_contact_chats(jid: str, limit: int = 20, page: int = 0) -> List[Chat]:
 def get_last_interaction(jid: str) -> str:
     """Get most recent message involving the contact."""
     try:
-        conn = sqlite3.connect(MESSAGES_DB_PATH)
+        conn = sqlite3.connect(Path(MESSAGES_DB_PATH).resolve().as_uri() + "?mode=ro", uri=True)
         cursor = conn.cursor()
         
         cursor.execute("""
@@ -535,7 +554,7 @@ def get_last_interaction(jid: str) -> str:
 def get_chat(chat_jid: str, include_last_message: bool = True) -> Optional[Chat]:
     """Get chat metadata by JID."""
     try:
-        conn = sqlite3.connect(MESSAGES_DB_PATH)
+        conn = sqlite3.connect(Path(MESSAGES_DB_PATH).resolve().as_uri() + "?mode=ro", uri=True)
         cursor = conn.cursor()
         
         query = """
@@ -583,7 +602,7 @@ def get_chat(chat_jid: str, include_last_message: bool = True) -> Optional[Chat]
 def get_direct_chat_by_contact(sender_phone_number: str) -> Optional[Chat]:
     """Get chat metadata by sender phone number."""
     try:
-        conn = sqlite3.connect(MESSAGES_DB_PATH)
+        conn = sqlite3.connect(Path(MESSAGES_DB_PATH).resolve().as_uri() + "?mode=ro", uri=True)
         cursor = conn.cursor()
         
         cursor.execute("""
@@ -623,6 +642,8 @@ def get_direct_chat_by_contact(sender_phone_number: str) -> Optional[Chat]:
             conn.close()
 
 def send_message(recipient: str, message: str) -> Tuple[bool, str]:
+    if os.environ.get("WHATSAPP_ENABLE_SEND") != "1":
+        return False, "Sending is disabled; explicitly enable WHATSAPP_ENABLE_SEND=1"
     try:
         # Validate input
         if not recipient:
@@ -634,7 +655,7 @@ def send_message(recipient: str, message: str) -> Tuple[bool, str]:
             "message": message,
         }
         
-        response = requests.post(url, json=payload)
+        response = api_post(payload, "send")
         
         # Check if the request was successful
         if response.status_code == 200:
@@ -651,6 +672,8 @@ def send_message(recipient: str, message: str) -> Tuple[bool, str]:
         return False, f"Unexpected error: {str(e)}"
 
 def send_file(recipient: str, media_path: str) -> Tuple[bool, str]:
+    if os.environ.get("WHATSAPP_ENABLE_SEND") != "1":
+        return False, "Sending is disabled; explicitly enable WHATSAPP_ENABLE_SEND=1"
     try:
         # Validate input
         if not recipient:
@@ -668,7 +691,7 @@ def send_file(recipient: str, media_path: str) -> Tuple[bool, str]:
             "media_path": media_path
         }
         
-        response = requests.post(url, json=payload)
+        response = api_post(payload, "send")
         
         # Check if the request was successful
         if response.status_code == 200:
@@ -685,6 +708,8 @@ def send_file(recipient: str, media_path: str) -> Tuple[bool, str]:
         return False, f"Unexpected error: {str(e)}"
 
 def send_audio_message(recipient: str, media_path: str) -> Tuple[bool, str]:
+    if os.environ.get("WHATSAPP_ENABLE_SEND") != "1":
+        return False, "Sending is disabled; explicitly enable WHATSAPP_ENABLE_SEND=1"
     try:
         # Validate input
         if not recipient:
@@ -708,7 +733,7 @@ def send_audio_message(recipient: str, media_path: str) -> Tuple[bool, str]:
             "media_path": media_path
         }
         
-        response = requests.post(url, json=payload)
+        response = api_post(payload, "send")
         
         # Check if the request was successful
         if response.status_code == 200:
@@ -741,7 +766,7 @@ def download_media(message_id: str, chat_jid: str) -> Optional[str]:
             "chat_jid": chat_jid
         }
         
-        response = requests.post(url, json=payload)
+        response = api_post(payload, "download")
         
         if response.status_code == 200:
             result = response.json()

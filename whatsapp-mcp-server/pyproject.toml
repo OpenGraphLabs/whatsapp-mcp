@@ -1,11 +1,10 @@
 [project]
 name = "whatsapp-mcp-server"
 version = "0.1.0"
-description = "Add your description here"
-readme = "README.md"
+description = "Local WhatsApp MCP with authenticated loopback bridge"
 requires-python = ">=3.11"
 dependencies = [
     "httpx>=0.28.1",
-    "mcp[cli]>=1.6.0",
-    "requests>=2.32.3",
+    "mcp[cli]>=1.28.1,<2",
+    "requests>=2.33.0,<3",
 ]

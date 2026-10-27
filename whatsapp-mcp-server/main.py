@@ -1,3 +1,4 @@
+import os
 from typing import List, Dict, Any, Optional
 from mcp.server.fastmcp import FastMCP
 from whatsapp import (
@@ -15,10 +16,11 @@ from whatsapp import (
     download_media as whatsapp_download_media
 )
 
+# Preserve the upstream text/dataclass responses; they are not JSON output schemas.
 # Initialize FastMCP server
 mcp = FastMCP("whatsapp")
 
-@mcp.tool()
+@mcp.tool(structured_output=False)
 def search_contacts(query: str) -> List[Dict[str, Any]]:
     """Search WhatsApp contacts by name or phone number.
     
@@ -28,7 +30,7 @@ def search_contacts(query: str) -> List[Dict[str, Any]]:
     contacts = whatsapp_search_contacts(query)
     return contacts
 
-@mcp.tool()
+@mcp.tool(structured_output=False)
 def list_messages(
     after: Optional[str] = None,
     before: Optional[str] = None,
@@ -69,7 +71,7 @@ def list_messages(
     )
     return messages
 
-@mcp.tool()
+@mcp.tool(structured_output=False)
 def list_chats(
     query: Optional[str] = None,
     limit: int = 20,
@@ -95,7 +97,7 @@ def list_chats(
     )
     return chats
 
-@mcp.tool()
+@mcp.tool(structured_output=False)
 def get_chat(chat_jid: str, include_last_message: bool = True) -> Dict[str, Any]:
     """Get WhatsApp chat metadata by JID.
     
@@ -106,7 +108,7 @@ def get_chat(chat_jid: str, include_last_message: bool = True) -> Dict[str, Any]
     chat = whatsapp_get_chat(chat_jid, include_last_message)
     return chat
 
-@mcp.tool()
+@mcp.tool(structured_output=False)
 def get_direct_chat_by_contact(sender_phone_number: str) -> Dict[str, Any]:
     """Get WhatsApp chat metadata by sender phone number.
     
@@ -116,7 +118,7 @@ def get_direct_chat_by_contact(sender_phone_number: str) -> Dict[str, Any]:
     chat = whatsapp_get_direct_chat_by_contact(sender_phone_number)
     return chat
 
-@mcp.tool()
+@mcp.tool(structured_output=False)
 def get_contact_chats(jid: str, limit: int = 20, page: int = 0) -> List[Dict[str, Any]]:
     """Get all WhatsApp chats involving the contact.
     
@@ -128,7 +130,7 @@ def get_contact_chats(jid: str, limit: int = 20, page: int = 0) -> List[Dict[str
     chats = whatsapp_get_contact_chats(jid, limit, page)
     return chats
 
-@mcp.tool()
+@mcp.tool(structured_output=False)
 def get_last_interaction(jid: str) -> str:
     """Get most recent WhatsApp message involving the contact.
     
@@ -138,7 +140,7 @@ def get_last_interaction(jid: str) -> str:
     message = whatsapp_get_last_interaction(jid)
     return message
 
-@mcp.tool()
+@mcp.tool(structured_output=False)
 def get_message_context(
     message_id: str,
     before: int = 5,
@@ -154,7 +156,7 @@ def get_message_context(
     context = whatsapp_get_message_context(message_id, before, after)
     return context
 
-@mcp.tool()
+@(mcp.tool(structured_output=False) if os.environ.get("WHATSAPP_ENABLE_SEND") == "1" else lambda fn: fn)
 def send_message(
     recipient: str,
     message: str
@@ -183,7 +185,7 @@ def send_message(
         "message": status_message
     }
 
-@mcp.tool()
+@(mcp.tool(structured_output=False) if os.environ.get("WHATSAPP_ENABLE_SEND") == "1" else lambda fn: fn)
 def send_file(recipient: str, media_path: str) -> Dict[str, Any]:
     """Send a file such as a picture, raw audio, video or document via WhatsApp to the specified recipient. For group messages use the JID.
     
@@ -203,7 +205,7 @@ def send_file(recipient: str, media_path: str) -> Dict[str, Any]:
         "message": status_message
     }
 
-@mcp.tool()
+@(mcp.tool(structured_output=False) if os.environ.get("WHATSAPP_ENABLE_SEND") == "1" else lambda fn: fn)
 def send_audio_message(recipient: str, media_path: str) -> Dict[str, Any]:
     """Send any audio file as a WhatsApp audio message to the specified recipient. For group messages use the JID. If it errors due to ffmpeg not being installed, use send_file instead.
     
@@ -221,7 +223,7 @@ def send_audio_message(recipient: str, media_path: str) -> Dict[str, Any]:
         "message": status_message
     }
 
-@mcp.tool()
+@mcp.tool(structured_output=False)
 def download_media(message_id: str, chat_jid: str) -> Dict[str, Any]:
     """Download media from a WhatsApp message and get the local file path.
     

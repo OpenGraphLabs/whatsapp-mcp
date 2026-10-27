@@ -1,3 +1,20 @@
+# WhatsApp credentials, messages, media and local configuration
+store/
+runtime/
 *.db
-claude_desktop_config.json
-whatsapp.log
+*.db-*
+*.sqlite*
+*.log
+.env
+.env.*
+!.env.example
+*token*
+pairing-qr*
+claude_desktop_config*.json
+.mcp.json
+# Generated artifacts
+.venv/
+__pycache__/
+*.py[cod]
+.DS_Store
+/whatsapp-bridge/whatsapp-client
